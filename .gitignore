@@ -1,0 +1,11 @@
+# Python / Jupyter
+__pycache__/
+.ipynb_checkpoints/
+
+# Arduino
+*.bin
+*.elf
+*.hex
+
+# VS Code
+.vscode/
