@@ -1,6 +1,6 @@
 import argparse
 import csv
-import os
+import os   
 import platform
 import sys
 from pathlib import Path
@@ -71,6 +71,7 @@ def run(
     dnn=False,  # use OpenCV DNN for ONNX inference
     vid_stride=1,  # video frame-rate stride
 ):
+    result = []
     source = str(source)
     save_img = not nosave and not source.endswith(".txt")  # save inference images
     is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
@@ -181,6 +182,12 @@ def run(
                     confidence = float(conf)
                     confidence_str = f"{confidence:.2f}"
 
+                    result.append({
+                        "image": p.name,
+                        "label": label,
+                        "confidence": confidence_str
+                    })
+
                     if save_csv:
                         write_to_csv(p.name, label, confidence_str)
 
@@ -243,6 +250,7 @@ def run(
     if update:
         strip_optimizer(weights[0])  # update model (to fix SourceChangeWarning)
 
+    return result
 
 def parse_opt():
     parser = argparse.ArgumentParser()
