@@ -1,0 +1,27 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.ipynb_checkpoints/
+
+# ---- Virtual Environment ----
+venv/
+env/
+.venv/
+
+# ---- YOLO / Model Weights ----
+*.pt
+runs/
+weights/
+
+# ---- VSCode ----
+.vscode/
+
+# ---- Logs ----
+*.log
+
+# ---- System Files ----
+.DS_Store
+Thumbs.db
