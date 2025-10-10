@@ -8,7 +8,7 @@
 #define WIFI_PASS   "YOUR_PASSWORD"
 
 // CONFIG MQTT
-#define MQTT_SERVER   "192.168.1.100"  
+#define MQTT_SERVER   "172.20.10.2"  
 #define MQTT_PORT 	1883
 #define MQTT_USER 	""           	
 #define MQTT_PASSWD   ""
