@@ -4,7 +4,7 @@
 # In[ ]:
 
 import sys, os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'vision', 'yolov5')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'vision')))
 
 import tkinter as tk
 import random
@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as anm
 import RPi.GPIO as GPIO
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from detect import run
+from vision import detect
+
 
 
 # In[ ]:
