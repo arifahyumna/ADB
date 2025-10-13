@@ -3,6 +3,8 @@
 
 # In[ ]:
 
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'vision', 'yolov5')))
 
 import tkinter as tk
 import random
@@ -10,13 +12,12 @@ import paho.mqtt.client as mqtt
 import datetime as dt
 import matplotlib.pyplot as plt
 import matplotlib.animation as anm
+import RPi.GPIO as GPIO
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from detect import run
 
 
 # In[ ]:
-
-
 #konfigurasi MQTT
 MQTT_BROKER = "192.168.1.100" 
 MQTT_PORT = 1883
@@ -31,6 +32,9 @@ suhu_update = None
 xs = []
 ys = []
 SSR_PIN = 17
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(SSR_PIN, GPIO.OUT)
 
 #update daya
 '''def daya_pencacah():
@@ -157,6 +161,13 @@ label_result = tk.Label(frame_klas, text="--", relief="ridge", width=10)
 frame_klas.pack(pady=10)
 label_klas.pack(side="left", padx=5)
 label_result.pack(side="left", padx=5)
+
+#alert
+frame_process = tk.Frame(frame_1)
+label_process = tk.Label(frame_process, text="--", relief="ridge", width=40)
+
+frame_process.pack(pady=15)
+label_process.pack(side="left")
 
 #--------------------------
 #create widgets "Pencetak"
