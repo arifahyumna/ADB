@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as anm
 import RPi.GPIO as GPIO
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from vision.detect import run 
+from detect import run 
 
 
 
