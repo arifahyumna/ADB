@@ -7,6 +7,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'v
 import tkinter as tk
 import random
 import datetime as dt
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from PIL import Image, ImageTk
+import cv2
 
 # MQTT
 try:
@@ -15,13 +19,10 @@ except Exception as e:
     print("Module paho-mqtt tidak ditemukan. Install dengan: pip3 install paho-mqtt")
     raise
 
-import matplotlib.pyplot as plt
-import RPi.GPIO as GPIO
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from detect import run
 
 # ---------------- MQTT konfigurasi ----------------
-MQTT_BROKER = "192.168.1.100"
+MQTT_BROKER = "172.20.10.2"
 MQTT_PORT = 1883
 MQTT_TOPICS = [("press/temp", 0), ("press/alert", 0), ("sensor/daya", 0)]
 
@@ -32,6 +33,8 @@ ys = []
 SSR_PIN = 17
 
 # ---------------- Setup GPIO (dengan fallback simulasi) ----------------
+import RPi.GPIO as GPIO
+
 class FakeGPIO:
     BCM = None
     OUT = None
@@ -64,78 +67,6 @@ except Exception as e:
     print("Menggunakan FakeGPIO.")
     GPIO = FakeGPIO()
     GPIO_AVAILABLE = False
-
-# ---------------- fungsi klasifikasi (YOLO) ----------------
-def klasifikasi():
-    try:
-        hasilYolo = run(
-            weight="best.pt",
-            source="test.jpg",
-            save_csv=False,
-            save_img=False,
-            nosave=True
-        )
-
-        if hasilYolo and len(hasilYolo) > 0 and isinstance(hasilYolo, (list, tuple)):
-            hasil = hasilYolo[0].get("label", "unknown")
-        else:
-            hasil = "unknown"
-
-        label_result.config(text=f"{hasil}")
-
-        if hasil == "plastic":
-            GPIO.output(SSR_PIN, GPIO.HIGH)
-            print("SSR ON - plastik terdeteksi")
-            label_process.config(text="SHREDDER ON")
-        elif hasil == "nonplastic":
-            GPIO.output(SSR_PIN, GPIO.LOW)
-            print("SSR OFF - non plastik terdeteksi")
-            label_process.config(text="SHREDDER OFF")
-        else:
-            GPIO.output(SSR_PIN, GPIO.LOW)
-            print("SSR OFF - tidak dikenali")
-            label_process.config(text="SHREDDER OFF")
-    except Exception as e:
-        print("Error di fungsi klasifikasi:", e)
-        label_result.config(text="--")
-        try:
-            GPIO.output(SSR_PIN, GPIO.LOW)
-        except Exception:
-            pass
-
-    # jalankan lagi setelah 5 detik
-    try:
-        root.after(5000, klasifikasi)
-    except Exception:
-        pass
-
-# ---------------- MQTT callbacks ----------------
-def on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT broker (rc =", rc, ")")
-    client.subscribe(MQTT_TOPICS)
-
-def on_message(client, userdata, msg):
-    global suhu_update
-    topic = msg.topic
-    payload = msg.payload.decode()
-
-    if topic == "press/temp":
-        try:
-            suhu_val = float(payload)
-            suhu_update = suhu_val
-            label_units.config(text=f"{suhu_val: .2f} ℃")
-        except Exception:
-            label_units.config(text=f"Error: {payload}")
-
-    elif topic == "sensor/daya":
-        try:
-            daya_val = float(payload)
-            label_unitd2.config(text=f"{daya_val} Watt")
-        except Exception:
-            label_unitd2.config(text=f"Error: {payload}")
-
-    elif topic == "press/alert":
-        label_alert.config(text="ALERT")
 
 # ---------------- Tkinter UI ----------------
 root = tk.Tk()
@@ -243,6 +174,82 @@ def graf_update():
     # panggil lagi tiap 5000 ms
     root.after(5000, graf_update)
 
+# ---------------- MQTT callbacks ----------------
+def on_connect(client, userdata, flags, rc):
+    print("Connected to MQTT broker (rc =", rc, ")")
+    client.subscribe(MQTT_TOPICS)
+
+def on_message(client, userdata, msg):
+    global suhu_update
+    topic = msg.topic
+    payload = msg.payload.decode()
+
+    if topic == "press/temp":
+        try:
+            suhu_val = float(payload)
+            suhu_update = suhu_val
+            label_units.config(text=f"{suhu_val: .2f} ℃")
+        except Exception:
+            label_units.config(text=f"Error: {payload}")
+
+    elif topic == "sensor/daya":
+        try:
+            daya_val = float(payload)
+            label_unitd2.config(text=f"{daya_val} Watt")
+        except Exception:
+            label_unitd2.config(text=f"Error: {payload}")
+
+    elif topic == "press/alert":
+        label_alert.config(text="ALERT")
+
+#----------------------Camera + YOLO Preview----------------
+cap = cv2.VideoCapture(0)
+
+def update_camera():
+    ret, frame = cap.read()
+    if ret:
+        try:
+            results = run(weights="vision/weights/plastik/best.pt", source=frame, nosave=True, stream=True)
+            
+            for r in results:
+                frame = r.plot()  
+
+                try:
+                    names = r.names
+                    classes = r.boxes.cls.tolist()
+
+                    if len(classes) > 0:
+                        detected_class = names[int(classes[0])]
+                        label_result.config(text=detected_class)
+
+                        if detected_class == "plastic":
+                            GPIO.output(SSR_PIN, GPIO.HIGH)
+                            label_process.config(text="SHREDDER ON")
+                        else:
+                            GPIO.output(SSR_PIN, GPIO.LOW)
+                            label_process.config(text="SHREDDER OFF")
+                    else:
+                        label_result.config(text="--")
+                        label_process.config(text="--")
+
+                except Exception as e:
+                    print("Parsing YOLO result error:", e)
+                    label_result.config(text="--")
+                    label_process.config(text="--")
+
+                break  
+        
+        except Exception as e:
+            print("YOLO error:", e)
+
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        imgtk = Image.fromarray(frame).resize((300, 200))
+        imgtk = ImageTk.PhotoImage(image=imgtk)
+        label_v.imgtk = imgtk
+        label_v.configure(image=imgtk)
+
+    root.after(100, update_camera)
+
 # ---------------- MQTT setup ----------------
 client = mqtt.Client()
 client.on_connect = on_connect
@@ -256,7 +263,10 @@ except Exception as e:
 
 # ---------------- Jalankan loops ----------------
 # mulai klasifikasi loop & grafik loop
-root.after(1000, klasifikasi)   # start klasifikasi setelah 1s
+root.after(1000, update_camera)   # start klasifikasi setelah 1s
 root.after(1000, graf_update)   # start grafik update setelah 1s
 
 root.mainloop()
+
+cap.release()
+cv2.destroyAllWindows()
