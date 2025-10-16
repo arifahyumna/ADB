@@ -18,7 +18,7 @@ except Exception as e:
     print("Module paho-mqtt tidak ditemukan. Install dengan: pip3 install paho-mqtt")
     raise
 
-model = torch.hub.load('ultralytics/yolo5', 'custom', path='vision/weights/plastik/best.pt', force_reload=True)
+model = torch.hub.load('.', 'custom', path='vision/weights/plastik/best.pt', source='local')
 
 # ---------------- MQTT konfigurasi ----------------
 MQTT_BROKER = "172.20.10.2"
