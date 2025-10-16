@@ -213,6 +213,17 @@ def on_message(client, userdata, msg):
         label_alert.config(text="ALERT")
 
 #--------------------Frame YOLO--------------------------
+import queue
+
+frame_queue = queue.Queue(maxsize=1)
+
+annotated_frame = None
+class_text = "--"
+process_text = "--"
+
+worker_running = True
+worker_lock = threading.Lock()
+
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Kamera tidak terdeteksi")
@@ -220,56 +231,102 @@ else:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-lock = threading.Lock()
+def worker():
+    global annotated_frame, class_text,process_text, worker_running
+    while worker_running:
+        try:
+            frame = frame_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+            
+        try:
+            img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            im = torch.from_numpy(img).to(device)
+            im = im.permute(2, 0, 1).float() / 255.0
+            im = im.unsqueeze(0)
+            
+            pred = model(im)
+            pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
+            
+            detected_class = None
+            for det in pred:
+                if len(det):
+                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
+                    cls_id = int(det[0, 5])
+                    detected_class = names[cls_id]
+                    
+            if detected_class:
+                kelas = detected_class.lower()
+                if kelas == "plastik":
+                    try:
+                        GPIO.output(SSR_PIN, GPIO.HIGH)
+                    except Exception:
+                        pass
+                    out_class = kelas
+                    out_proc = "SHREDDER ON"
+                else:
+                    try:
+                        GPIO.output(SSR_PIN, GPIO.LOW)
+                    except Exception:
+                        pass
+                    out_class = kelas
+                    out_proc = "SHREDDER OFF"
+            else:
+                try:
+                    GPIO.output(SSR_PIN, GPIO.LOW)
+                except Exception:
+                    pass
+                out_class = "--"
+                out_proc = "--"
+                
+            annotated = frame.copy()
+            cv2.putText(annotated, f"{out_class}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+            
+            with worker_lock:
+                annotated_frame = annotated
+                class_text = out_class
+                process_text = out_proc
+            
+        except Exception as e:
+            print("Worker exception:", e)
+        
+t = threading.Thread(target=worker, daemon=True)
+t.start()
 
-def process_frame(frame):
-    global label_result, label_process
-
-    # Convert BGR → RGB dan resize
-    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    im = torch.from_numpy(img).to(device)
-    im = im.permute(2, 0, 1).float() / 255.0
-    im = im.unsqueeze(0)
-
-    pred = model(im)
-    pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
-
-    detected_class = None
-    for det in pred:
-        if len(det):
-            det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
-            cls_id = int(det[0, 5])
-            detected_class = names[cls_id]
-
-    # Kontrol SSR
-    if detected_class:
-        kelas = detected_class.lower()
-        label_result.config(text=kelas)
-        if kelas == "plastik":
-            GPIO.output(SSR_PIN, GPIO.HIGH)
-            label_process.config(text="SHREDDER ON")
-        elif kelas in ["hand", "non plastik"]:
-            GPIO.output(SSR_PIN, GPIO.LOW)
-            label_process.config(text="SHREDDER OFF")
-    else:
-        GPIO.output(SSR_PIN, GPIO.LOW)
-        label_result.config(text="--")
-        label_process.config(text="--")
-
-    # Tampilkan frame hasil deteksi ke dashboard
-    annotated = frame.copy()
-    frame_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-    imgtk = ImageTk.PhotoImage(Image.fromarray(frame_rgb).resize((400, 300)))
-    label_v.imgtk = imgtk
-    label_v.configure(image=imgtk)
-
-#---------------------fungsi loop camera----------------------
 def update_camera():
+    global annotated_frame, class_text, process_text
+    
     ret, frame = cap.read()
     if ret:
-        threading.Thread(target=process_frame, args=(frame,)).start()
-    root.after(100, update_camera)
-
+        try:
+            frame_queue.put_nowait(frame)
+        except queue.Full:
+            try:
+                _ = frame_queue.get_nowait()
+            except Exveption:
+                pass
+            try: 
+                frame_queue.put_nowait(frame)
+            except Exception:
+                pass
+    with worker_lock:
+        af = annotated_frame
+        ct = class_text
+        pt = process_text
+        
+    if af is not None:
+        af_rgb = cv2.cvtColor(af, cv2.COLOR_BGR2RGB)
+        pil_im = Image.fromarray(af_rgb).resize((400, 300))
+        imgtk = ImageTk.PhotoImage(pil_im)
+        
+        label_v.configure(image=imgtk)
+        label_v.imgtk = imgtk
+        
+    label_result.config(text=ct)
+    label_process.config(text=pt)
+    
+    label_v.after(30, update_camera)
+    
 #------------------------detup mqtt-----------------------------
 client = mqtt.Client()
 client.on_connect = on_connect
