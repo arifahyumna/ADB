@@ -10,6 +10,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from PIL import Image, ImageTk
 import cv2
 import torch 
+import threading
 
 # MQTT
 try:
@@ -204,10 +205,19 @@ def on_message(client, userdata, msg):
 #----------------------Camera + YOLO Preview----------------
 cap = cv2.VideoCapture(0)
 
+<<<<<<< HEAD
 def update_camera():
     ret, frame = cap.read()
     if ret:
         results = model(frame, conf=0.25, imgsz=250, verbose=False,)
+=======
+def process_frame(frame):
+    global label_result, label_process, label_v
+    
+    try:
+        results = model(frame)
+        detected_class = None
+>>>>>>> 581ac46fd9e1b955e42ac4440ff41502c7793338
         
         for r in results:
             boxes = r.boxes
@@ -216,28 +226,34 @@ def update_camera():
                 cls_id = int(boxes.cls[0])
                 detected_class = names[cls_id]
                 break
-
+                
         if detected_class:
             kelas = detected_class.lower()
-            label_result.config(text=kelas)
+            label_result.after(0, lambda: label_result.config(text=kelas))
             if kelas == "plastik":
                 GPIO.output(SSR_PIN, GPIO.HIGH)
-                label_process.config(text="SHREDDER ON")
+                label_process.after(0, lambda: label_process.config(text="SHREDDER ON"))
             elif kelas in ["hand", "non plastik"]:
                 GPIO.output(SSR_PIN, GPIO.LOW)
-                label_process.config(text="SHREDDER OFF")
-
+                label_process.after(0, lambda: label_process.config(text="SHREDDER OFF"))
         else:
             GPIO.output(SSR_PIN, GPIO.LOW)
-            label_result.config(text="--")
-            label_process.config(text="--")
-
+            label_result.after(0, lambda: label_result.config(text="--"))
+            label_process.after(0, lambda: label_process.config(text="--"))
+        
         annotated = results[0].plot()
         frame_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
         imgtk = ImageTk.PhotoImage(Image.fromarray(frame_rgb).resize((300, 200)))
+        label_v.after(0, lambda:label_v.configure(image=imgtk))
         label_v.imgtk = imgtk
-        label_v.configure(image=imgtk)
+        
+    except Exception as e:
+        print("Error:", e)
 
+def update_camera():
+    ret, frame = cap.read()
+    if ret:
+        threading.Thread(target=process_frame, args=(frame,)).start()
     root.after(100, update_camera)
 
 # ---------------- MQTT setup ----------------
