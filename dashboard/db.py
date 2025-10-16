@@ -2,8 +2,6 @@
 # coding: utf-8
 
 import sys, os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'vision')))
-
 import tkinter as tk
 import random
 import datetime as dt
@@ -19,7 +17,8 @@ except Exception as e:
     print("Module paho-mqtt tidak ditemukan. Install dengan: pip3 install paho-mqtt")
     raise
 
-from detect import run
+from ultralytics import YOLO
+model = YOLO("vision/weights/plastik/best.pt")
 
 # ---------------- MQTT konfigurasi ----------------
 MQTT_BROKER = "172.20.10.2"
@@ -208,43 +207,34 @@ cap = cv2.VideoCapture(0)
 def update_camera():
     ret, frame = cap.read()
     if ret:
-        try:
-            results = run(weights="vision/weights/plastik/best.pt", source=frame, nosave=True, stream=True)
-            
-            for r in results:
-                frame = r.plot()  
-
-                try:
-                    names = r.names
-                    classes = r.boxes.cls.tolist()
-
-                    if len(classes) > 0:
-                        detected_class = names[int(classes[0])]
-                        label_result.config(text=detected_class)
-
-                        if detected_class == "plastic":
-                            GPIO.output(SSR_PIN, GPIO.HIGH)
-                            label_process.config(text="SHREDDER ON")
-                        else:
-                            GPIO.output(SSR_PIN, GPIO.LOW)
-                            label_process.config(text="SHREDDER OFF")
-                    else:
-                        label_result.config(text="--")
-                        label_process.config(text="--")
-
-                except Exception as e:
-                    print("Parsing YOLO result error:", e)
-                    label_result.config(text="--")
-                    label_process.config(text="--")
-
-                break  
+        results = model.predict(frame, conf=0.25, imgsz=250, verbose=False,)
         
-        except Exception as e:
-            print("YOLO error:", e)
+        for r in results:
+            boxes = r.boxes
+            names = r.names
+            if len(boxes) > 0:
+                cls_id = int(boxes.cls[0])
+                detected_class = names[cls_id]
+                break
 
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        imgtk = Image.fromarray(frame).resize((300, 200))
-        imgtk = ImageTk.PhotoImage(image=imgtk)
+        if detected_class:
+            kelas = detected_class.lower()
+            label_result.config(text=kelas)
+            if kelas == "plastik":
+                GPIO.output(SSR_PIN, GPIO.HIGH)
+                label_process.config(text="SHREDDER ON")
+            elif kelas in ["hand", "non plastik"]:
+                GPIO.output(SSR_PIN, GPIO.LOW)
+                label_process.config(text="SHREDDER OFF")
+
+        else:
+            GPIO.output(SSR_PIN, GPIO.LOW)
+            label_result.config(text="--")
+            label_process.config(text="--")
+
+        annotated = results[0].plot()
+        frame_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+        imgtk = ImageTk.PhotoImage(Image.fromarray(frame_rgb).resize((300, 200)))
         label_v.imgtk = imgtk
         label_v.configure(image=imgtk)
 
