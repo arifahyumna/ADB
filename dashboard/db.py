@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from PIL import Image, ImageTk
 import cv2
+import torch 
 
 # MQTT
 try:
@@ -17,8 +18,7 @@ except Exception as e:
     print("Module paho-mqtt tidak ditemukan. Install dengan: pip3 install paho-mqtt")
     raise
 
-from ultralytics import YOLO
-model = YOLO("vision/weights/plastik/best.pt")
+model = torch.hub.load('ultralytics/yolo5', 'custom', path='vision/weights/plastik/best.pt', force_reload=True)
 
 # ---------------- MQTT konfigurasi ----------------
 MQTT_BROKER = "172.20.10.2"
