@@ -207,7 +207,7 @@ cap = cv2.VideoCapture(0)
 def update_camera():
     ret, frame = cap.read()
     if ret:
-        results = model.predict(frame, conf=0.25, imgsz=250, verbose=False,)
+        results = model(frame, conf=0.25, imgsz=250, verbose=False,)
         
         for r in results:
             boxes = r.boxes
