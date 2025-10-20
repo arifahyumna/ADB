@@ -9,22 +9,13 @@ import RPi.GPIO as GPIO
 import threading
 import time
 from pathlib import Path
-
-# MQTT
-try:
-    import paho.mqtt.client as mqtt
-except Exception as e:
-    print("Module paho-mqtt tidak ditemukan. Install dengan: pip3 install paho-mqtt")
-    raise
+import paho.mqtt.client as mqtt
+import json
+from utils.augmentations import letterbox
 
 from models.common import DetectMultiBackend
 from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
-
-# ---------------- MQTT konfigurasi ----------------
-MQTT_BROKER = "172.20.10.2"
-MQTT_PORT = 1883
-MQTT_TOPICS = [("press/temp", 0), ("press/alert", 0), ("sensor/daya", 0)]
 
 # ---------------- variabel global ----------------
 suhu_update = None
@@ -186,31 +177,54 @@ def graf_update():
 
 # ---------------- MQTT callbacks ----------------
 def on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT broker (rc =", rc, ")")
-    client.subscribe(MQTT_TOPICS)
+	global flag_connected
+	flag_connected = 1
+	client_subscription(client)
+	print("Connected to MQTT server")
+    
+def on_disconnect(client, userdata, rc):
+	global flag_connected
+	flag_connected = 0
+	print("Disconncted From MQTT server")
+    
+def client_subscription(client):
+	client.subscribe("esp32/#")
 
 def on_message(client, userdata, msg):
     global suhu_update
     topic = msg.topic
     payload = msg.payload.decode()
+    
+    print(f"[DEBUG] Topic: {topic}, Payload: {payload}")
 
-    if topic == "press/temp":
+    if topic == "esp32/suhu":
         try:
-            suhu_val = float(payload)
+            data = json.loads(payload)
+            suhu_val = data["temp_c"]
             suhu_update = suhu_val
             label_units.config(text=f"{suhu_val: .2f} ℃")
         except Exception:
             label_units.config(text=f"Error: {payload}")
+            print("error suhu: ", e)
 
-    elif topic == "sensor/daya":
+    elif topic == "esp32/daya":
         try:
-            daya_val = float(payload)
+            data = json.loads(payload)
+            daya_val = data.get("daya_watt", 0.0)
             label_unitd2.config(text=f"{daya_val} Watt")
         except Exception:
             label_unitd2.config(text=f"Error: {payload}")
+            print("error daya: ", e)
 
-    elif topic == "press/alert":
-        label_alert.config(text="ALERT")
+    elif topic == "esp32/alert":
+        try:
+            data = json.loads(payload)
+            alert_val = data.get("alert", payload)
+            label_alert.config(text=f"{alert_val}")
+        except Exception:
+            label_alert.config(text=f"{payload}")
+            print("error alert: ", e)
+        
 
 #--------------------Frame YOLO--------------------------
 import queue
@@ -240,20 +254,34 @@ def worker():
             continue
             
         try:
-            img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            im = torch.from_numpy(img).to(device)
+            #resize and prepare
+            img_reized = letterbox(frame, new_shape=640, stride=stride)[0]
+            img_rgb = cv2.cvtColor(image_resized, cv2.COLOR_BGR2RGB)
+            im = torch.from_numpy(img_rgb).to(device)
             im = im.permute(2, 0, 1).float() / 255.0
             im = im.unsqueeze(0)
             
+            #inference --> non max suppression
             pred = model(im)
             pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
             
             detected_class = None
             for det in pred:
-                if len(det):
-                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
-                    cls_id = int(det[0, 5])
-                    detected_class = names[cls_id]
+                if det is NOne or len(det) == 0:
+                    continue
+                    
+                # det: tensor of shape (num_det, 6) => [x1, y1, x2, y2, conf, cls]
+                # scale boxes back to original frame size
+                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
+                
+                #detection dengan confidence tertinggi
+                for *xyxy, conf, cls in det.cpu().numpy():
+                    if float(conf) > best_conf:
+                        best_conf = foat(conf)
+                        best_cls = int(cls)
+                        
+            if best_conf >= 0.5 and best_cls != -1:
+                detected_class = named[best_cls]
                     
             if detected_class:
                 kelas = detected_class.lower()
@@ -303,7 +331,7 @@ def update_camera():
         except queue.Full:
             try:
                 _ = frame_queue.get_nowait()
-            except Exveption:
+            except Exception:
                 pass
             try: 
                 frame_queue.put_nowait(frame)
@@ -327,13 +355,13 @@ def update_camera():
     
     label_v.after(30, update_camera)
     
-#------------------------detup mqtt-----------------------------
+#------------------------setup mqtt-----------------------------
 client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 
 try:
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    client.connect("192.168.43.9", 1883, 60)
     client.loop_start()
 except Exception as e:
     print("MQTT connection failed:", e)
