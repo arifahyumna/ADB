@@ -1,36 +1,36 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <Adafruit_MAX31855.h>
+#include <MAX6675.h>
 #include <ArduinoJson.h>
 
-// CONFIG WIFI
-#define WIFI_SSID   "YOUR_SSID"
-#define WIFI_PASS   "YOUR_PASSWORD"
+// === Konfigurasi WiFi ===
+const char* ssid = "anum";
+const char* password = "gojek123";
 
-// CONFIG MQTT
-#define MQTT_SERVER   "172.20.10.2"  
-#define MQTT_PORT 	1883
-#define MQTT_USER 	""           	
-#define MQTT_PASSWD   ""
+// === Konfigurasi MQTT Broker ===
+#define mqtt_server "192.168.43.9" //ganti dengan mqtt-server yang digunakan
+#define mqtt_port 1883 
+#define mqtt_user ""
+#define mqtt_passwd ""
 
-#define TOPIC_TELE	"press/temp"
-#define TOPIC_ALERT   "press/alert"
+// === Topik MQTT ===
+#define topik_suhu "esp32/suhu"
+#define topik_alert "esp32/alert"
+#define topik_daya "esp32/daya"
 
-// TEMPERATURE CONFIG
-#define TEMP_TARGET_LOW   150.0
-#define TEMP_TARGET_HIGH  200.0
-#define HOLD_TIME_SEC 	300   // 5 menit
-#define COOL_DOWN_READY   30.0
-#define OVERHEAT_LIMIT	220.0
+// === Temperature Config ===
+#define TEMP_TARGET_LOW 150.0
+#define TEMP_TARGET_HIGH 200.0
+#define HOLD_TIME_SEC 300
+#define COOL_DOWN_READY 30.0
+#define OVERHEAT_LIMIT 220.0
 
-//  PIN CONFIG
-#define PIN_SCK   18 
-#define PIN_CS	5
-#define PIN_MISO  19
-#define SSR_PIN   14
-
-// OBJECTS
-Adafruit_MAX31855 thermocouple(PIN_SCK, PIN_CS, PIN_MISO);
+// === Pin MAX6675 ===
+int thermoSO = 19;
+int thermoCS = 23;
+int thermoSCK = 5;
+MAX6675 thermocouple(thermoSCK, thermoCS, thermoSO);
+int SSR_PIN = 14;
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -41,122 +41,141 @@ State state = ST_IDLE;
 unsigned long holdStart = 0;
 unsigned long lastTemp = 0;
 float currentTemp = 0.0;
+float daya = 0.0;
 
-// FUNCTIONS
-void setupWiFi() {
+
+// === Fungsi koneksi WiFi ===
+void setup_wifi() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(ssid, password);
   Serial.print("Connecting WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-delay(500);
-Serial.print(".");
+  while (WiFi.status() != WL_CONNECTED){
+    delay(500);
+    Serial.print(".");
   }
-  Serial.println(" Connected!");
+  Serial.println("Connected!");
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
 }
 
+// === connect MQTT ===
 void reconnectMQTT() {
   while (!mqtt.connected()) {
-Serial.print("Connecting MQTT...");
-if (mqtt.connect("ESP32Client",MQTT_USER, MQTT_PASSWD)) {
+    Serial.print("Connecting MQTT...");
+    if (mqtt.connect("ESP32Client", mqtt_user, mqtt_passwd)) {
       Serial.println("connected");
-} else {
-  Serial.print("failed, rc=");
-  Serial.print(mqtt.state());
-  delay(2000);
-}
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(mqtt.state());
+      delay(2000);
+    }
   }
 }
 
-void publishTemp() {
+// === publish code ===
+void publishSuhu() {
   StaticJsonDocument<256> doc;
   doc["temp_c"] = currentTemp;
   doc["state"] = (int)state;
-  doc["ts"] = millis()/1000;
+  doc["ts"] = millis() / 1000;
 
   char buf[256];
   size_t n = serializeJson(doc, buf);
-  mqtt.publish(TOPIC_TELE, buf, n);
+  mqtt.publish(topik_suhu, buf, n);
 }
 
 void publishAlert(const char* msg) {
   StaticJsonDocument<200> doc;
   doc["alert"] = msg;
   doc["temp_c"] = currentTemp;
-  doc["ts"] = millis()/1000;
+  doc["ts"] = millis() / 1000;
 
   char buf[200];
   size_t n = serializeJson(doc, buf);
-  mqtt.publish(TOPIC_ALERT, buf, n);
+  mqtt.publish(topik_alert, buf, n);
 }
 
-// SETUP
+void publishDaya() {
+  StaticJsonDocument<128> doc;
+  doc["daya_watt"] = daya;
+  doc["ts"] = millis() / 1000;
+
+  char buf[128];
+  size_t n = serializeJson(doc, buf);
+  mqtt.publish(topik_daya, buf, n);
+}
+
+// === Setup ===
 void setup() {
   Serial.begin(115200);
-  pinMode(SSR_PIN, OUTPUT);
-  digitalWrite(SSR_PIN, LOW);
+  setup_wifi();
 
-  setupWiFi();
-  mqtt.setServer(MQTT_SERVER, MQTT_PORT);
+  mqtt.setServer(mqtt_server, mqtt_port);
+  delay(2000); // Stabilkan pembacaan awal
 }
 
+// === Loop utama ===
 void loop() {
-  if (!mqtt.connected()) reconnectMQTT();
+  if (!mqtt.connected()) {
+    reconnectMQTT();
+  }
   mqtt.loop();
 
-  currentTemp = thermocouple.readCelsius();
+  // Baca suhu dari MAX6675
+  currentTemp = thermocouple.getCelsius();
 
   if (currentTemp > OVERHEAT_LIMIT) {
-    digitalWrite(SSR_PIN, LOW);
     state = ST_ERROR;
     publishAlert("OVERHEAT");
   }
 
-  switch(state) {
+  switch (state) {
     case ST_IDLE:
       if (currentTemp > TEMP_TARGET_LOW) {
         state = ST_HEATING;
-        publishAlert("Pemanasan");
+        publishAlert("Pemanasan dimulai");
       }
-    break;
+      break;
 
     case ST_HEATING:
-      digitalWrite(SSR_PIN, HIGH);
       if (currentTemp >= TEMP_TARGET_LOW && currentTemp <= TEMP_TARGET_HIGH) {
         state = ST_HOLD;
         holdStart = millis();
-        publishAlert("Pendinginan");
+        publishAlert("Suhu stabil (Hold)");
       }
-    break;
+      break;
 
     case ST_HOLD:
-      digitalWrite(SSR_PIN, HIGH);
-      if ((millis() - holdStart)/1000 >= HOLD_TIME_SEC) {
+      if ((millis() - holdStart) / 1000 >= HOLD_TIME_SEC) {
         state = ST_COOLING;
-        digitalWrite(SSR_PIN, LOW);
+        publishAlert("Pendinginan dimulai");
       }
-    break;
+      break;
 
     case ST_COOLING:
-      digitalWrite(SSR_PIN, LOW);
       if (currentTemp <= COOL_DOWN_READY) {
         state = ST_DONE;
-        publishAlert("Proses Selesai");
+        publishAlert("Proses selesai");
       }
-    break;
+      break;
 
     case ST_ERROR:
-      digitalWrite(SSR_PIN, LOW);
       publishAlert("ERROR");
-    break;
-    }
+      break;
 
-  if (millis() - lastTemp >= 60000) {
-  publishTemp();
-  lastTemp = millis();
+    case ST_DONE:
+      break;
+  }
+
+  if (millis() - lastTemp >= 10000) {
+    publishSuhu();
+    publishDaya();
+    lastTemp = millis();
   }
 
   delay(500);
+  
 }
-
-
-
