@@ -1,14 +1,14 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <MAX6675.h>
+#include <max6675.h>
 #include <ArduinoJson.h>
 
 // === Konfigurasi WiFi ===
-const char* ssid = "anum";
+const char* ssid = "anum"; 
 const char* password = "gojek123";
 
 // === Konfigurasi MQTT Broker ===
-#define mqtt_server "192.168.43.9" //ganti dengan mqtt-server yang digunakan
+#define mqtt_server "192.168.43.9" //ganti dengan mqtt-server yang digunakan, (1) iwgetid (2) ip -4 addr show wlan0 
 #define mqtt_port 1883 
 #define mqtt_user ""
 #define mqtt_passwd ""
@@ -125,7 +125,7 @@ void loop() {
   mqtt.loop();
 
   // Baca suhu dari MAX6675
-  currentTemp = thermocouple.getCelsius();
+  currentTemp = thermocouple.readCelsius();
 
   if (currentTemp > OVERHEAT_LIMIT) {
     state = ST_ERROR;
