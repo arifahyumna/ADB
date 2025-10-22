@@ -224,7 +224,43 @@ def on_message(client, userdata, msg):
         except Exception:
             label_alert.config(text=f"{payload}")
             print("error alert: ", e)
-        
+            
+def on_closing():
+    global worker_running
+    print("Shutting down...")
+    worker_running = False
+    # stop mqtt loop
+    try:
+        client.loop_stop()
+        client.disconnect()
+    except Exception:
+        pass
+     # give worker a moment
+    try:
+         t.join(timeout=1.0)
+    except Exception:
+         pass
+     # release camera
+    try:
+         if cap.isOpened():
+             cap.release()
+    except Exception:
+         pass
+     # GPIO cleanup (safe)
+    try:
+         if hasattr(GPIO, 'cleanup'):
+            try:
+                 GPIO.cleanup()
+            except:
+                pass
+    except Exception as e:
+                print("GPIO cleanup error:", e)
+     # destroy GUI
+    try:
+         root.destroy()
+    except Exception:
+        pass
+    
 
 #--------------------Frame YOLO--------------------------
 import queue
@@ -255,8 +291,8 @@ def worker():
             
         try:
             #resize and prepare
-            img_reized = letterbox(frame, new_shape=640, stride=stride)[0]
-            img_rgb = cv2.cvtColor(image_resized, cv2.COLOR_BGR2RGB)
+            img_resized = letterbox(frame, new_shape=640, stride=stride)[0]
+            img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
             im = torch.from_numpy(img_rgb).to(device)
             im = im.permute(2, 0, 1).float() / 255.0
             im = im.unsqueeze(0)
@@ -266,8 +302,14 @@ def worker():
             pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
             
             detected_class = None
+            best_conf = 0.0
+            best_conf = 0
+            best_label = None
+            best_cls = -1
+            
+            detected_class = None
             for det in pred:
-                if det is NOne or len(det) == 0:
+                if det is None or len(det) == 0:
                     continue
                     
                 # det: tensor of shape (num_det, 6) => [x1, y1, x2, y2, conf, cls]
@@ -277,11 +319,11 @@ def worker():
                 #detection dengan confidence tertinggi
                 for *xyxy, conf, cls in det.cpu().numpy():
                     if float(conf) > best_conf:
-                        best_conf = foat(conf)
+                        best_conf = float(conf)
                         best_cls = int(cls)
                         
             if best_conf >= 0.5 and best_cls != -1:
-                detected_class = named[best_cls]
+                detected_class = names[best_cls]
                     
             if detected_class:
                 kelas = detected_class.lower()
@@ -361,7 +403,7 @@ client.on_connect = on_connect
 client.on_message = on_message
 
 try:
-    client.connect("192.168.43.9", 1883, 60)
+    client.connect("127.0.1.1", 1883, 60)
     client.loop_start()
 except Exception as e:
     print("MQTT connection failed:", e)
