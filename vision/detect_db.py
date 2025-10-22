@@ -263,37 +263,45 @@ def worker():
             pred = model(im)
             pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
             
-            detected_class = None
+            detected_classes = []
+			for det in pred:
+    			if len(det):
+        			det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
+        			for *box, conf, cls in det:
+            			detected_classes.append(names[int(cls)])
+
             for det in pred:
                 if len(det):
                     det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
                     cls_id = int(det[0, 5])
                     detected_class = names[cls_id]
                     
-            if detected_class:
-                kelas = detected_class.lower()
-                if kelas == "plastik":
-                    try:
-                        GPIO.output(SSR_PIN, GPIO.HIGH)
-                    except Exception:
-                        pass
-                    out_class = kelas
-                    out_proc = "SHREDDER ON"
-                else:
-                    try:
-                        GPIO.output(SSR_PIN, GPIO.LOW)
-                    except Exception:
-                        pass
-                    out_class = kelas
-                    out_proc = "SHREDDER OFF"
-            else:
-                try:
-                    GPIO.output(SSR_PIN, GPIO.LOW)
-                except Exception:
-                    pass
-                out_class = "--"
-                out_proc = "--"
-                
+			if detected_classes:
+    			labels_lower = [c.lower() for c in detected_classes]
+
+    		if "hand" in labels_lower or "non plastik" in labels_lower:
+       			try: GPIO.output(SSR_PIN, GPIO.LOW)
+        		except: pass
+		        out_class = ", ".join(labels_lower)
+		        out_proc = "SHREDDER OFF"
+
+    		elif "plastik" in labels_lower:
+		        try: GPIO.output(SSR_PIN, GPIO.HIGH)
+		        except: pass
+		        out_class = "plastik"
+		        out_proc = "SHREDDER ON"
+
+    		else:
+		        try: GPIO.output(SSR_PIN, GPIO.LOW)
+		        except: pass
+		        out_class = "--"
+		        out_proc = "--"
+			else:
+			    try: GPIO.output(SSR_PIN, GPIO.LOW)
+			    except: pass
+			    out_class = "--"
+			    out_proc = "--"
+			                
             annotated = frame.copy()
             cv2.putText(annotated, f"{out_class}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
             
