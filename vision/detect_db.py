@@ -48,6 +48,8 @@ class FakeGPIO:
         print(f"FakeGPIO: output pin {pin} state {state}")
     @staticmethod
     def setwarnings(flag):
+	@staticmethod
+	def cleanup():pass
         pass
 
 GPIO_AVAILABLE = True
