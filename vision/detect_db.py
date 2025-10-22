@@ -47,10 +47,9 @@ class FakeGPIO:
     def output(pin, state):
         print(f"FakeGPIO: output pin {pin} state {state}")
     @staticmethod
-    def setwarnings(flag):
+    def setwarnings(flag):pass
 	@staticmethod
 	def cleanup():pass
-        pass
 
 GPIO_AVAILABLE = True
 try:
