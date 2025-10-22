@@ -254,34 +254,20 @@ def worker():
             continue
             
         try:
-            #resize and prepare
-            img_reized = letterbox(frame, new_shape=640, stride=stride)[0]
-            img_rgb = cv2.cvtColor(image_resized, cv2.COLOR_BGR2RGB)
-            im = torch.from_numpy(img_rgb).to(device)
+            img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            im = torch.from_numpy(img).to(device)
             im = im.permute(2, 0, 1).float() / 255.0
             im = im.unsqueeze(0)
             
-            #inference --> non max suppression
             pred = model(im)
             pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
             
             detected_class = None
             for det in pred:
-                if det is NOne or len(det) == 0:
-                    continue
-                    
-                # det: tensor of shape (num_det, 6) => [x1, y1, x2, y2, conf, cls]
-                # scale boxes back to original frame size
-                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
-                
-                #detection dengan confidence tertinggi
-                for *xyxy, conf, cls in det.cpu().numpy():
-                    if float(conf) > best_conf:
-                        best_conf = foat(conf)
-                        best_cls = int(cls)
-                        
-            if best_conf >= 0.5 and best_cls != -1:
-                detected_class = named[best_cls]
+                if len(det):
+                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
+                    cls_id = int(det[0, 5])
+                    detected_class = names[cls_id]
                     
             if detected_class:
                 kelas = detected_class.lower()
@@ -331,7 +317,7 @@ def update_camera():
         except queue.Full:
             try:
                 _ = frame_queue.get_nowait()
-            except Exception:
+            except Exveption:
                 pass
             try: 
                 frame_queue.put_nowait(frame)
@@ -354,18 +340,7 @@ def update_camera():
     label_process.config(text=pt)
     
     label_v.after(30, update_camera)
-    
-#------------------------setup mqtt-----------------------------
-client = mqtt.Client()
-client.on_connect = on_connect
-client.on_message = on_message
-
-try:
-    client.connect("192.168.43.9", 1883, 60)
-    client.loop_start()
-except Exception as e:
-    print("MQTT connection failed:", e)
-
+	
 #-------------------jalankan GUI------------------------------
 graf_update()
 update_camera()
