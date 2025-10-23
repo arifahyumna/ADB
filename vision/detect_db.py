@@ -306,18 +306,18 @@ def worker():
             best_cls = -1
             detected_class = None
             detected_classes = []
-			for det in pred:
-    			if len(det):
-        			det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
-        			for *box, conf, cls in det:
-            			detected_classes.append(names[int(cls)])
+	    for det in pred:
+    		if len(det):
+        	  det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
+        	  for *box, conf, cls in det:
+            	     detected_classes.append(names[int(cls)])
 
             for det in pred:
                 if det is None or len(det) == 0:
                     continue
                 # det: tensor of shape (num_det, 6) => [x1, y1, x2, y2, conf, cls]
                 # scale boxes back to original frame size
-                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape
+               	     det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape
                 #detection dengan confidence tertinggi
                 for *xyxy, conf, cls in det.cpu().numpy():
                     if float(conf) > best_conf:
@@ -331,7 +331,7 @@ def worker():
                     cls_id = int(det[0, 5])
                     detected_class = names[cls_id]
 
-			if detected_classes:
+		if detected_classes:
     			labels_lower = [c.lower() for c in detected_classes]
 
     		if "hand" in labels_lower or "non plastik" in labels_lower:
