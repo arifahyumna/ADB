@@ -48,6 +48,8 @@ class FakeGPIO:
         print(f"FakeGPIO: output pin {pin} state {state}")
     @staticmethod
     def setwarnings(flag):pass
+    @staticmethod
+    def cleanup():pass
 
 GPIO_AVAILABLE = True
 try:
@@ -180,12 +182,12 @@ def on_connect(client, userdata, flags, rc):
 	flag_connected = 1
 	client_subscription(client)
 	print("Connected to MQTT server")
-    
+
 def on_disconnect(client, userdata, rc):
 	global flag_connected
 	flag_connected = 0
 	print("Disconncted From MQTT server")
-    
+
 def client_subscription(client):
 	client.subscribe("esp32/#")
 
@@ -193,7 +195,6 @@ def on_message(client, userdata, msg):
     global suhu_update
     topic = msg.topic
     payload = msg.payload.decode()
-    
     print(f"[DEBUG] Topic: {topic}, Payload: {payload}")
 
     if topic == "esp32/suhu":
@@ -223,7 +224,7 @@ def on_message(client, userdata, msg):
         except Exception:
             label_alert.config(text=f"{payload}")
             print("error alert: ", e)
-            
+
 def on_closing():
     global worker_running
     print("Shutting down...")
@@ -259,7 +260,6 @@ def on_closing():
          root.destroy()
     except Exception:
         pass
-    
 
 #--------------------Frame YOLO--------------------------
 import queue
@@ -287,95 +287,92 @@ def worker():
             frame = frame_queue.get(timeout=0.5)
         except queue.Empty:
             continue
-            
         try:
-<<<<<<< HEAD
+
             #resize and prepare
             img_resized = letterbox(frame, new_shape=640, stride=stride)[0]
             img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
             im = torch.from_numpy(img_rgb).to(device)
-=======
             img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             im = torch.from_numpy(img).to(device)
->>>>>>> 1b08d80affdb62dcf1bc23270f6602ac65625267
             im = im.permute(2, 0, 1).float() / 255.0
             im = im.unsqueeze(0)
-            
             pred = model(im)
             pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
-            
             detected_class = None
             best_conf = 0.0
             best_conf = 0
             best_label = None
             best_cls = -1
-            
             detected_class = None
+            detected_classes = []
+			for det in pred:
+    			if len(det):
+        			det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
+        			for *box, conf, cls in det:
+            			detected_classes.append(names[int(cls)])
+
             for det in pred:
-<<<<<<< HEAD
                 if det is None or len(det) == 0:
                     continue
-                    
                 # det: tensor of shape (num_det, 6) => [x1, y1, x2, y2, conf, cls]
                 # scale boxes back to original frame size
-                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
-                
+                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape
                 #detection dengan confidence tertinggi
                 for *xyxy, conf, cls in det.cpu().numpy():
                     if float(conf) > best_conf:
                         best_conf = float(conf)
                         best_cls = int(cls)
-                        
             if best_conf >= 0.5 and best_cls != -1:
                 detected_class = names[best_cls]
-=======
+
                 if len(det):
                     det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
                     cls_id = int(det[0, 5])
                     detected_class = names[cls_id]
->>>>>>> 1b08d80affdb62dcf1bc23270f6602ac65625267
-                    
-            if detected_class:
-                kelas = detected_class.lower()
-                if kelas == "plastik":
-                    try:
-                        GPIO.output(SSR_PIN, GPIO.HIGH)
-                    except Exception:
-                        pass
-                    out_class = kelas
-                    out_proc = "SHREDDER ON"
-                else:
-                    try:
-                        GPIO.output(SSR_PIN, GPIO.LOW)
-                    except Exception:
-                        pass
-                    out_class = kelas
-                    out_proc = "SHREDDER OFF"
-            else:
-                try:
-                    GPIO.output(SSR_PIN, GPIO.LOW)
-                except Exception:
-                    pass
-                out_class = "--"
-                out_proc = "--"
-                
+
+			if detected_classes:
+    			labels_lower = [c.lower() for c in detected_classes]
+
+    		if "hand" in labels_lower or "non plastik" in labels_lower:
+       			try: GPIO.output(SSR_PIN, GPIO.LOW)
+        		except: pass
+		        out_class = ", ".join(labels_lower)
+		        out_proc = "SHREDDER OFF"
+
+    		elif "plastik" in labels_lower:
+		        try: GPIO.output(SSR_PIN, GPIO.HIGH)
+		        except: pass
+		        out_class = "plastik"
+		        out_proc = "SHREDDER ON"
+
+    		else:
+		        try: GPIO.output(SSR_PIN, GPIO.LOW)
+		        except: pass
+		        out_class = "--"
+		        out_proc = "--"
+			else:
+			    try: GPIO.output(SSR_PIN, GPIO.LOW)
+			    except: pass
+			    out_class = "--"
+			    out_proc = "--"
             annotated = frame.copy()
             cv2.putText(annotated, f"{out_class}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-            
+
             with worker_lock:
                 annotated_frame = annotated
                 class_text = out_class
                 process_text = out_proc
-            
+
         except Exception as e:
             print("Worker exception:", e)
-        
+
 t = threading.Thread(target=worker, daemon=True)
 t.start()
 
 def update_camera():
     global annotated_frame, class_text, process_text
-    
+
     ret, frame = cap.read()
     if ret:
         try:
@@ -385,7 +382,7 @@ def update_camera():
                 _ = frame_queue.get_nowait()
             except Exveption:
                 pass
-            try: 
+            try:
                 frame_queue.put_nowait(frame)
             except Exception:
                 pass
@@ -393,21 +390,17 @@ def update_camera():
         af = annotated_frame
         ct = class_text
         pt = process_text
-        
+
     if af is not None:
         af_rgb = cv2.cvtColor(af, cv2.COLOR_BGR2RGB)
         pil_im = Image.fromarray(af_rgb).resize((400, 300))
         imgtk = ImageTk.PhotoImage(pil_im)
-        
         label_v.configure(image=imgtk)
         label_v.imgtk = imgtk
-        
-    label_result.config(text=ct)
-    label_process.config(text=pt)
-    
-    label_v.after(30, update_camera)
-<<<<<<< HEAD
-    
+    	label_result.config(text=ct)
+    	label_process.config(text=pt)
+    	label_v.after(30, update_camera)
+
 #------------------------setup mqtt-----------------------------
 client = mqtt.Client()
 client.on_connect = on_connect
@@ -419,9 +412,6 @@ try:
 except Exception as e:
     print("MQTT connection failed:", e)
 
-=======
-	
->>>>>>> 1b08d80affdb62dcf1bc23270f6602ac65625267
 #-------------------jalankan GUI------------------------------
 graf_update()
 update_camera()
