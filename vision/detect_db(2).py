@@ -239,7 +239,7 @@ def worker():
             img_lb = letterbox(img, new_shape=640, stride=stride, auto=False)[0]
             img_lb = img_lb.astype("float32") / 255.0
 
-            # 👉 TFLite BUTUH NHWC
+            # TFLite BUTUH NHWC
             im = torch.from_numpy(img_lb).unsqueeze(0)  # (1,640,640,3)
             print(im.shape)
             # ================= INFERENCE =================
